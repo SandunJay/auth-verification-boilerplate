@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
+import { client, httpRequestDurationMicroseconds } from './config/metrics.js';
 
 dotenv.config();
 connectDB();
@@ -11,6 +12,19 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 app.use(express.json());
+
+app.use((req, res, next)=> {
+    const end = httpRequestDurationMicroseconds.startTimer();
+    res.on('finish', ()=>{
+        end({method: req.method, route: req.route, code: res.statusCode});
+    });
+    next();
+})
+
+app.use('/metrics', async (req, res)=> {
+    res.set('Content-Type', client.register.contentType);
+    res.end(await client.register.metrics());
+})
 
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);

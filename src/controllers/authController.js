@@ -3,6 +3,7 @@ import User from "../models/User";
 import sendEmail from "../utils/sendEmail";
 import dotenv from 'dotenv';
 import redisClient from "../config/redis";
+import speakeasy from 'speakeasy';
 
 dotenv.config();
 
@@ -84,10 +85,50 @@ export const login = async (req, res) => {
             return res.status(400).json({message: "Account not verified"});
         }
 
-        const token = generateToken(user._id);
+        // const token = generateToken(user._id);
 
-        res.status(200).json({token});
+        const otp = speakeasy.totp({
+            secret: user._id.toString(),
+            encoding: 'base32'
+        });
+
+        await sendEmail({
+            to: user.email,
+            subject: "OTP for login",
+            text: `Use below OTP ${otp}`
+        });
+
+        res.status(200).json({message: "OTP sent to email"});
     } catch (error) {
         res.status(500).json({message:"Server error"});
+    }
+}
+
+export const verifyOTP = async (req, res) => {
+    const {email, otp} = req.body;
+
+    try {
+        const user = await User.findOne({email});
+
+        if (!user){
+            return res.status(400).json({message: "Invalid email"});
+        }
+
+        const isValid = speakeasy.totp.verify({
+            secret: user._id.toString(),
+            encoding: 'base32',
+            token: otp,
+            window: 1
+        });
+
+        if(!isValid){
+            return res.status(400).json({message: "Invalid OTP"});
+        }
+
+        const token = generateToken(user._id);
+
+        res.status(200).json(token);
+    } catch (error) {
+        res.status(500).json({message: 'Server error'});
     }
 }
