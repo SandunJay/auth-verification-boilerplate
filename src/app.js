@@ -4,6 +4,7 @@ import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
 import { client, httpRequestDurationMicroseconds } from './config/metrics.js';
+import './config/passport.js';
 
 dotenv.config();
 connectDB();
