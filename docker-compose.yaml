@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  server:
+    build: .
+    ports:
+      - '5000:5000'
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - auth-server
+    volumes:
+      - .:/usr/src/app
+
+  mongo:
+    image: mongo
+    ports:
+      - '27017:27017'
+    networks:
+      - auth-server
+
+  redis:
+    image: redis
+    ports:
+      - '6379:6379'
+    networks:
+      - auth-server
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yaml
+    ports:
+      - '9090:9090'
+    networks:
+      - auth-server
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - '3000:3000'
+    networks:
+      - auth-server
+
+networks:
+  auth-server:
+    driver: bridge

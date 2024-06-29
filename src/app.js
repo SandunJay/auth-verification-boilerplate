@@ -3,6 +3,8 @@ import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
+import passport from 'passport';
+import session from 'express-session';
 import { client, httpRequestDurationMicroseconds } from './config/metrics.js';
 import './config/passport.js';
 
@@ -13,6 +15,9 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 app.use(express.json());
+app.use(session({secret: 'secret', resave: false, saveUninitialized: true}));
+app.use(passport.initialize());
+app.use(passport.session());
 
 app.use((req, res, next)=> {
     const end = httpRequestDurationMicroseconds.startTimer();
