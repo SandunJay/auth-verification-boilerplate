@@ -17,6 +17,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.4.4",
     "nodemailer": "^6.9.14",
+    "prom-client": "^15.1.3",
     "redis": "^4.6.14"
   },
   "devDependencies": {
