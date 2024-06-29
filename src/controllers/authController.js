@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import User from "../models/User";
 import sendEmail from "../utils/sendEmail";
 import dotenv from 'dotenv';
+import redisClient from "../config/redis";
 
 dotenv.config();
 
@@ -63,7 +64,18 @@ export const login = async (req, res) => {
     const {email, password} = req.body;
 
     try {
-        const user = await User.findOne({email});
+        const cachedUser = await redisClient.get(email);
+        let user;
+
+        if (cachedUser){
+            user = JSON.parse(cachedUser);
+        }else{
+            user = await User.findOne({email});
+            if(user){
+                await redisClient.set(email, JSON.stringify(user));
+            }
+        }
+
         if (!user || !(await user.matchPassword(password))){
             return res.status(401).json({message:"Invalid email or password"});
         }
