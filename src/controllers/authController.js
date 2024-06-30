@@ -62,45 +62,111 @@ export const verifyEmail = async (req , res) => {
 };
 
 export const login = async (req, res) => {
-    const {email, password} = req.body;
+    // const {email, password} = req.body;
+
+    // try {
+    //     const cachedUser = await redisClient.get(email);
+    //     let user;
+
+    //     if (cachedUser){
+    //         user = JSON.parse(cachedUser);
+    //     }else{
+    //         user = await User.findOne({email});
+    //         if(user){
+    //             await redisClient.set(email, JSON.stringify(user));
+    //         }
+    //     }
+
+    //     if (!user || !(await user.matchPassword(password))){
+    //         return res.status(401).json({message:"Invalid email or password"});
+    //     }
+
+    //     if(!user.isVerified){
+    //         return res.status(400).json({message: "Account not verified"});
+    //     }
+
+    //     // const token = generateToken(user._id);
+
+    //     const otp = speakeasy.totp({
+    //         secret: user._id.toString(),
+    //         encoding: 'base32'
+    //     });
+
+    //     await sendEmail({
+    //         to: email,
+    //         subject: "OTP for login",
+    //         text: `Use below OTP ${otp}`
+    //     });
+
+    //     res.status(200).json({message: "OTP sent to email"});
+    // } catch (error) {
+    //     res.status(500).json({message:"Server error"});
+    // }
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required." });
+    }
 
     try {
-        const cachedUser = await redisClient.get(email);
         let user;
 
-        if (cachedUser){
-            user = JSON.parse(cachedUser);
-        }else{
-            user = await User.findOne({email});
-            if(user){
-                await redisClient.set(email, JSON.stringify(user));
+        // Attempt to get the user from the cache
+        try {
+            const cachedUser = await redisClient.get(email);
+            if (cachedUser) {
+                user = new User(JSON.parse(cachedUser));
+            }
+        } catch (err) {
+            console.error('Error fetching from Redis:', err);
+            return res.status(500).json({ message: "Server error." });
+        }
+
+        // If the user is not in the cache, query the database
+        if (!user) {
+            try {
+                user = await User.findOne({ email });
+                if (user) {
+                    await redisClient.set(email, JSON.stringify(user));
+                }
+            } catch (err) {
+                console.error('Error querying database:', err);
+                return res.status(500).json({ message: "Server error." });
             }
         }
 
-        if (!user || !(await user.matchPassword(password))){
-            return res.status(401).json({message:"Invalid email or password"});
+        // Validate the user and password
+        if (!user || !(await user.matchPassword(password))) {
+            return res.status(401).json({ message: "Invalid email or password." });
         }
 
-        if(!user.isVerified){
-            return res.status(400).json({message: "Account not verified"});
+        // Check if the user is verified
+        if (!user.isVerified) {
+            return res.status(400).json({ message: "Account not verified." });
         }
 
-        // const token = generateToken(user._id);
-
+        // Generate the OTP
         const otp = speakeasy.totp({
             secret: user._id.toString(),
             encoding: 'base32'
         });
 
-        await sendEmail({
-            to: user.email,
-            subject: "OTP for login",
-            text: `Use below OTP ${otp}`
-        });
+        // Send the OTP to the user's email
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: "OTP for login",
+                text: `Use the following OTP: ${otp}`
+            });
+        } catch (err) {
+            console.error('Error sending email:', err);
+            return res.status(500).json({ message: "Server error." });
+        }
 
-        res.status(200).json({message: "OTP sent to email"});
+        res.status(200).json({ message: "OTP sent to email" });
     } catch (error) {
-        res.status(500).json({message:"Server error"});
+        console.error('Unexpected server error:', error);
+        res.status(500).json({ message: "Server error." });
     }
 }
 
