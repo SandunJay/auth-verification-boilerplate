@@ -10,16 +10,15 @@ import { validationResult } from "express-validator";
 
 dotenv.config();
 
-const generateAccessToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, {
-        expiresIn: process.env.JWT_EXPIRES_IN,
-    });
+const generateToken = (id, secret, expiresIn) => {
+    return jwt.sign({ id }, secret, { expiresIn });
 }
 
-const generateRefreshToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_REFRESH_SECRET, { 
-        expiresIn: process.env.JWT_REFRESH_EXPIRES_IN,
-    });
+const createToken = async (userId, type, secret, expiresIn) => {
+    const token = generateToken(userId, secret, expiresIn);
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+    await Token.create({ userId, token, type, expiresAt });
+    return token;
 }
 
 export const register = async (req, res) => {
@@ -42,7 +41,7 @@ export const register = async (req, res) => {
 
         const user = await User.create({name, email, password});
 
-        const token = generateAccessToken(user._id);
+        const token = await createToken(user._id, 'verification', process.env.JWT_SECRET, process.env.JWT_EXPIRES_IN);
 
         const verificationLink = `http://localhost:${process.env.PORT}/api/auth/verify/${token}`;
 
@@ -72,8 +71,17 @@ export const verifyEmail = async (req , res) => {
             return res.status(400).json({message:"Invalid token"})
         }
 
+        const storedToken = await Token.findOne({ userId: decoded.id, token, type: 'verification' });
+        if (!storedToken || storedToken.revoked) {
+            logger.warn(`Verification attempt failed - Token not found or revoked for user ${user.email}.`);
+            return res.status(400).json({ message: "Invalid or expired token" });
+        }
+
         user.isVerified = true;
         await user.save();
+
+        storedToken.revoked = true;
+        await storedToken.save();
 
         logger.info(`User ${user.email} account verified successfully.`);
         res.status(200).json({message:"Account verified successfully"});
@@ -86,8 +94,8 @@ export const verifyEmail = async (req , res) => {
 export const login = async (req, res) => {
     const error = validationResult(req);
     if (!error.isEmpty()) {
-        logger.warn(`Validation errors: ${JSON.stringify(errors.array())}`);
-        return res.status(400).json({ errors: errors.array() });
+        logger.warn(`Validation errors: ${JSON.stringify(error.array())}`);
+        return res.status(400).json({ errors: error.array() });
     }
 
     const { email, password } = req.body;
@@ -136,7 +144,8 @@ export const login = async (req, res) => {
 
         const otp = speakeasy.totp({
             secret: user._id.toString(),
-            encoding: 'base32'
+            encoding: 'base32',
+            step: 600
         });
 
         try {
@@ -182,8 +191,8 @@ export const verifyOTP = async (req, res) => {
             return res.status(400).json({message: "Invalid OTP"});
         }
 
-        const accessToken = generateAccessToken(user._id);
-        const refreshToken = generateRefreshToken(user._id);
+        const accessToken = await createToken(user._id, 'access', process.env.JWT_SECRET, process.env.JWT_EXPIRES_IN);
+        const refreshToken = await createToken(user._id, 'refresh', process.env.JWT_REFRESH_SECRET, process.env.JWT_REFRESH_EXPIRES_IN);
 
         await redisClient.set(email, JSON.stringify(user), 'EX', process.env.JWT_EXPIRES_IN); // Set user data in Redis with expiration
         await redisClient.set(`accessToken:${user._id}`, accessToken, 'EX', process.env.JWT_EXPIRES_IN); // Set access token in Redis with expiration
@@ -206,7 +215,10 @@ export const forgotPassword = async (req, res) => {
             return res.status(400).json({message: "User not found"});
         }
 
-        const resetToken = generateAccessToken(user._id);
+        const expiresAt = new Date();
+        expiresAt.setMinutes(expiresAt.getMinutes() + parseInt(process.env.JWT_EXPIRES_IN));
+
+        const resetToken = createToken(user._id ,"verification", process.env.JWT_SECRET, expiresAt);
         const resetLink = `http://localhost:${process.env.PORT}/api/auth/reset-password/${resetToken}`;
         const email = user.email;
 
@@ -240,7 +252,10 @@ export const resetPassword = async(req, res) => {
         user.password = newPassword;
         await user.save();
 
+        await Token.updateMany({ userId: user._id }, { revoked: true });
         await redisClient.del(user.email);
+        await redisClient.del(`accessToken:${user._id}`);
+        await redisClient.del(`refreshToken:${user._id}`);
 
         logger.info(`Password reset successfully for user ${user.email}.`);
         res.status(200).json({message: "Password reset successfully"});
@@ -261,15 +276,17 @@ export const refreshToken = async (req, res) => {
     try {
         const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 
-        // const storedRefreshToken = await redisClient.get(`refreshToken:${decoded.id}`);
-        // if (refreshToken !== storedRefreshToken) {
-        //     logger.warn(`Refresh token invalid for user ${decoded.id}.`);
-        //     return res.status(401).json({ message: "Invalid refresh token." });
-        // }
+        const storedRefreshToken = await Token.findOne({ userId: decoded.id, token: refreshToken, type: 'refresh' });
+        if (!storedRefreshToken || storedRefreshToken.revoked) {
+            logger.warn(`Refresh token invalid for user ${decoded.id}.`);
+            return res.status(401).json({ message: "Invalid refresh token." });
+        }
 
+        await Token.updateMany({ userId: decoded.id, type: 'access' }, { revoked: true });
         await redisClient.del(`accessToken:${decoded.id}`);
-        const accessToken = generateAccessToken(decoded.id);
-        await redisClient.set(`accessToken:${decoded.id}`, accessToken);
+
+        const accessToken = await createToken(decoded.id, 'access', process.env.JWT_SECRET, process.env.JWT_EXPIRES_IN);
+        await redisClient.set(`accessToken:${decoded.id}`, accessToken, 'EX', process.env.JWT_EXPIRES_IN);
 
         logger.info(`Access token refreshed successfully.`);
         res.status(200).json({accessToken});
@@ -285,6 +302,11 @@ export const deleteAccount = async(req, res) => {
 
     try {
         await User.findByIdAndDelete(userId);
+        await Token.deleteMany({ userId });
+        await redisClient.del(req.user.email);
+        await redisClient.del(`accessToken:${userId}`);
+        await redisClient.del(`refreshToken:${userId}`);
+
         logger.info(`Account deleted successfully for user ${req.user.email}.`);
         res.status(200).json({message: "Account deleted successfully"});
     } catch (error) {
