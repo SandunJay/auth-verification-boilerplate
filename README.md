@@ -33,6 +33,7 @@ auth-verification-server/
 │   ├── auth.test.js
 │   └── user.test.js
 │
+├── .babelrc
 ├── .env
 ├── .gitignore
 ├── docker-compose.yaml
