@@ -227,6 +227,5 @@ LOG_PATH='auth_log.log'
     <h2>License</h2>
     <p>This project is licensed under the MIT License - see the <a rel="noreferrer">LICENSE</a> file for details.</p>
     <hr>
-    <p>Feel free to customize and expand this README file further based on your specific project requirements and additional features. This comprehensive guide should provide a solid foundation for users and contributors to understand and use your Authentication Verification Server effectively.</p>
 </div>
 </div>
