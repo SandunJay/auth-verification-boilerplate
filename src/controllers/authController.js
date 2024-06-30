@@ -217,10 +217,7 @@ export const forgotPassword = async (req, res) => {
             return res.status(400).json({message: "User not found"});
         }
 
-        const expiresAt = new Date();
-        expiresAt.setMinutes(expiresAt.getMinutes() + parseInt(process.env.JWT_EXPIRES_IN));
-
-        const resetToken = createToken(user._id ,"verification", process.env.JWT_SECRET, expiresAt);
+        const resetToken = await createToken(user._id ,"verification", process.env.JWT_SECRET, '10m');
         const resetLink = `http://localhost:${process.env.PORT}/api/auth/reset-password/${resetToken}`;
         const email = user.email;
 
