@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import redisClient from "../config/redis";
 import speakeasy from 'speakeasy';
 import logger from "../utils/logger";
+import { validationResult } from "express-validator";
 
 dotenv.config();
 
@@ -21,6 +22,13 @@ const generateRefreshToken = (id) => {
 }
 
 export const register = async (req, res) => {
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        logger.warn(`Validation errors: ${JSON.stringify(errors.array())}`);
+        return res.status(400).json({ errors: errors.array() });
+    }
+
     const {name, email, password} = req.body;
 
     try {
@@ -75,6 +83,12 @@ export const verifyEmail = async (req , res) => {
 };
 
 export const login = async (req, res) => {
+    const error = validationResult(req);
+    if (!error.isEmpty()) {
+        logger.warn(`Validation errors: ${JSON.stringify(errors.array())}`);
+        return res.status(400).json({ errors: errors.array() });
+    }
+
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -187,7 +201,7 @@ export const forgotPassword = async (req, res) => {
             return res.status(400).json({message: "User not found"});
         }
 
-        const resetToken = generateAccessToken(user._id, '10m');
+        const resetToken = generateAccessToken(user._id);
 
         const resetLink = `http://localhost:${process.env.PORT}/api/auth/reset-password/${resetToken}`;
 
