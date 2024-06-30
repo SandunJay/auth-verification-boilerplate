@@ -16,7 +16,7 @@ const generateToken = (id, secret, expiresIn) => {
 
 const createToken = async (userId, type, secret, expiresIn) => {
     const token = generateToken(userId, secret, expiresIn);
-    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+    const expiresAt = new Date(Date.now() + parseInt(expiresIn) * 1000);
     await Token.create({ userId, token, type, expiresAt });
     return token;
 }
@@ -144,9 +144,11 @@ export const login = async (req, res) => {
 
         const otp = speakeasy.totp({
             secret: user._id.toString(),
-            encoding: 'base32',
-            step: 600
+            encoding: 'base32'
         });
+
+        logger.info(`Generated OTP for ${email}: ${otp}`);
+
 
         try {
             await sendEmail({
@@ -183,7 +185,7 @@ export const verifyOTP = async (req, res) => {
             secret: user._id.toString(),
             encoding: 'base32',
             token: otp,
-            window: 1
+            window: 1 
         });
 
         if(!isValid){
