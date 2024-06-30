@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User";
+import Token from "../models/Token";
 import sendEmail from "../utils/sendEmail";
 import dotenv from 'dotenv';
 import redisClient from "../config/redis";
@@ -103,6 +104,8 @@ export const login = async (req, res) => {
             const cachedUser = await redisClient.get(email);
             if (cachedUser) {
                 user = new User(JSON.parse(cachedUser));
+            }else{
+                logger.warn(`User ${email} attempted to log in (User not found in redis).`)
             }
         } catch (err) {
             logger.error('Error fetching from Redis:', err);
@@ -112,8 +115,8 @@ export const login = async (req, res) => {
         if (!user) {
             try {
                 user = await User.findOne({ email });
-                if (user) {
-                    await redisClient.set(email, JSON.stringify(user));
+                if (!user) {
+                    logger.warn(`User ${email} attempted to log in (User not found ).`)
                 }
             } catch (err) {
                 logger.error('Error querying database:', err);
@@ -182,6 +185,10 @@ export const verifyOTP = async (req, res) => {
         const accessToken = generateAccessToken(user._id);
         const refreshToken = generateRefreshToken(user._id);
 
+        await redisClient.set(email, JSON.stringify(user), 'EX', process.env.JWT_EXPIRES_IN); // Set user data in Redis with expiration
+        await redisClient.set(`accessToken:${user._id}`, accessToken, 'EX', process.env.JWT_EXPIRES_IN); // Set access token in Redis with expiration
+        await redisClient.set(`refreshToken:${user._id}`, refreshToken, 'EX', process.env.JWT_REFRESH_EXPIRES_IN); // Set refresh token in Redis with expiration
+
         logger.info(`User ${email} logged in successfully.`);
         res.status(200).json({AccessToken: accessToken, RefreshToken: refreshToken});
     } catch (error) {
@@ -191,22 +198,20 @@ export const verifyOTP = async (req, res) => {
 }
 
 export const forgotPassword = async (req, res) => {
-    const {email} = req.body;
-
     try {
-        const user = await User.findOne({email});
+        const user = req.user;
 
         if(!user){
-            logger.warn(`Forgot password attempt failed - User not found for ${email}.`);
+            logger.warn(`Forgot password attempt failed - User not found for ${user.email}.`);
             return res.status(400).json({message: "User not found"});
         }
 
         const resetToken = generateAccessToken(user._id);
-
         const resetLink = `http://localhost:${process.env.PORT}/api/auth/reset-password/${resetToken}`;
+        const email = user.email;
 
         await sendEmail({
-            to: user.email,
+            email: email,
             subject: 'Reset Password',
             text:  `You are receiving this email because you (or someone else) has requested the reset of the password for your account. Please click on the following link, or paste this into your browser to complete the process: ${resetLink}`,
         });
@@ -235,6 +240,8 @@ export const resetPassword = async(req, res) => {
         user.password = newPassword;
         await user.save();
 
+        await redisClient.del(user.email);
+
         logger.info(`Password reset successfully for user ${user.email}.`);
         res.status(200).json({message: "Password reset successfully"});
     } catch (error) {
@@ -253,8 +260,17 @@ export const refreshToken = async (req, res) => {
 
     try {
         const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-        
+
+        // const storedRefreshToken = await redisClient.get(`refreshToken:${decoded.id}`);
+        // if (refreshToken !== storedRefreshToken) {
+        //     logger.warn(`Refresh token invalid for user ${decoded.id}.`);
+        //     return res.status(401).json({ message: "Invalid refresh token." });
+        // }
+
+        await redisClient.del(`accessToken:${decoded.id}`);
         const accessToken = generateAccessToken(decoded.id);
+        await redisClient.set(`accessToken:${decoded.id}`, accessToken);
+
         logger.info(`Access token refreshed successfully.`);
         res.status(200).json({accessToken});
     } catch (error) {
