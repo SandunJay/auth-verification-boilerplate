@@ -149,7 +149,7 @@ auth-verification-server/
     <p>To set up the Authentication Verification Server locally, follow these steps:</p>
     <h3>Prerequisites</h3>
     <ul>
-        <li>Node.js (version &gt;= 12.0.0)</li>
+        <li>Node.js (version &gt;= 16.0.0)</li>
         <li>MongoDB server (local or remote)</li>
         <li>Redis server (local or remote)</li>
     </ul>
