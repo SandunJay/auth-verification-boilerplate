@@ -62,46 +62,6 @@ export const verifyEmail = async (req , res) => {
 };
 
 export const login = async (req, res) => {
-    // const {email, password} = req.body;
-
-    // try {
-    //     const cachedUser = await redisClient.get(email);
-    //     let user;
-
-    //     if (cachedUser){
-    //         user = JSON.parse(cachedUser);
-    //     }else{
-    //         user = await User.findOne({email});
-    //         if(user){
-    //             await redisClient.set(email, JSON.stringify(user));
-    //         }
-    //     }
-
-    //     if (!user || !(await user.matchPassword(password))){
-    //         return res.status(401).json({message:"Invalid email or password"});
-    //     }
-
-    //     if(!user.isVerified){
-    //         return res.status(400).json({message: "Account not verified"});
-    //     }
-
-    //     // const token = generateToken(user._id);
-
-    //     const otp = speakeasy.totp({
-    //         secret: user._id.toString(),
-    //         encoding: 'base32'
-    //     });
-
-    //     await sendEmail({
-    //         to: email,
-    //         subject: "OTP for login",
-    //         text: `Use below OTP ${otp}`
-    //     });
-
-    //     res.status(200).json({message: "OTP sent to email"});
-    // } catch (error) {
-    //     res.status(500).json({message:"Server error"});
-    // }
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -196,5 +156,84 @@ export const verifyOTP = async (req, res) => {
         res.status(200).json(token);
     } catch (error) {
         res.status(500).json({message: 'Server error'});
+    }
+}
+
+export const forgotPassword = async (req, res) => {
+    const {email} = req.body;
+
+    try {
+        const user = await User.findOne({email});
+
+        if(!user){
+            return res.status(400).json({message: "User not found"});
+        }
+
+        const resetToken = generateToken(user._id, '10m');
+
+        const resetLink = `http://localhost:${process.env.PORT}/api/auth/reset-password/${resetToken}`;
+
+        await sendEmail({
+            to: user.email,
+            subject: 'Reset Password',
+            text:  `You are receiving this email because you (or someone else) has requested the reset of the password for your account. Please click on the following link, or paste this into your browser to complete the process: ${resetLink}`,
+        });
+
+        res.status(200).json({message: 'Password reset link sent to your email'});
+    } catch (error) {
+        res.status(500).json({message: "Server error"})
+    }
+}
+
+export const resetPassword = async(req, res) => {
+    const { token } = req.params;
+    const { newPassword} = req.params;
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.id);
+
+        if(!user){
+            return res.status(404).json({message: "User not found"});
+        }
+
+        user.password = newPassword;
+        await user.save();
+
+        res.status(200).json({message: "Password reset successfully"});
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({message: "Server error"});
+    }
+}
+
+export const refreshToken = async (req, res) => {
+    const { refreshToken } = req.body.refreshToken;
+
+    if(!refreshToken){
+        return res.status(400).json({message: "Refresh token is required"});
+    }
+
+    try {
+        const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+        
+        const accessToken = generateAccessToken(decoded.id);
+        res.status(200).json({accessToken});
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({message: "Server error"});
+    }
+
+}
+
+export const deleteAccount = async(req, res) => {
+    const userId = req.user._id;
+
+    try {
+        await User.findByIdAndDelete(userId);
+        res.status(200).json({message: "Account deleted successfully"});
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({message: "Server error"});
     }
 }
