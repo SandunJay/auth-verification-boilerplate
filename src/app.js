@@ -15,9 +15,9 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 app.use(express.json());
-// app.use(session({secret: 'secret', resave: false, saveUninitialized: true}));
-// app.use(passport.initialize());
-// app.use(passport.session());
+app.use(session({secret: 'secret', resave: false, saveUninitialized: true}));
+app.use(passport.initialize());
+app.use(passport.session());
 
 app.use((req, res, next)=> {
     const end = httpRequestDurationMicroseconds.startTimer();

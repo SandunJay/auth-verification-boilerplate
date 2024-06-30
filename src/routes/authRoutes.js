@@ -10,10 +10,10 @@ router.get('/verify/:token', verifyEmail);
 router.post('/login', login);
 router.post('/otp', verifyOTP);
 
-// router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-// router.get('/google/callback', passport.authenticate('google', { failureRedirect: '/' }), (req, res) => {
-//   const token = generateToken(req.user._id);
-//   res.redirect(`/auth-success?token=${token}`);
-// });
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+router.get('/google/callback', passport.authenticate('google', { failureRedirect: '/' }), (req, res) => {
+  const token = generateToken(req.user._id);
+  res.redirect(`/auth-success?token=${token}`);
+});
 
 export default router;
